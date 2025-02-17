@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "341450839119",
+    "firebase_url": "https://burjonet-zeroes-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "burjonet-zeroes",
+    "storage_bucket": "burjonet-zeroes.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:341450839119:android:4b61070980f4c7e589c63a",
+        "android_client_info": {
+          "package_name": "com.burjonet.burjo_stock"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCGEUU9rIojywDSbFqFIm3GAzYfL3i8zlo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,2 @@
+E:/BurjoStock.Burjonet/android/app/.cxx/Debug/5g6t96a2/arm64-v8a/CMakeFiles/edit_cache.dir
+E:/BurjoStock.Burjonet/android/app/.cxx/Debug/5g6t96a2/arm64-v8a/CMakeFiles/rebuild_cache.dir
