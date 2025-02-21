@@ -1,10 +1,35 @@
+import 'package:burjo_stock/screens/lowstock_screen.dart';
+import 'package:burjo_stock/screens/product_screen.dart';
+import 'package:burjo_stock/screens/report_screen.dart';
+import 'package:burjo_stock/screens/stock_input_screen.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
+import 'package:smooth_page_indicator/smooth_page_indicator.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-// Jika Anda punya file lain untuk StockInputScreen / ReportScreen, import di sini
-import 'package:burjo_stock/screens/stock_input_screen.dart';
-import 'package:burjo_stock/screens/report_screen.dart';
+// Pindahkan CustomPainter di luar kelas utama
+class DiagonalStripePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    for (double i = -2 * size.width; i < 2 * size.width; i += 10) {
+      canvas.drawLine(
+        Offset(i, 0),
+        Offset(i + size.height, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -14,16 +39,28 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  String productStatusMessage = "";
+  final PageController _pageController = PageController();
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
 
-  // Jadikan productsData milik state
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+  // Data produk
   Map<String, dynamic> _productsData = {};
 
-  // Variabel-variabel lain...
+  // Status stok harian
   bool isStockInputCompleted = false;
   String stokHarianMessage = "";
   List<Map<String, dynamic>> lowStockProducts = [];
+
+  // Laporan kemarin
   Map<String, dynamic> todayReport = {};
+
+  // Loading indicator
   bool isLoading = true;
 
   @override
@@ -32,65 +69,92 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
+  /// Menghasilkan sapaan berdasarkan waktu saat ini
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 12) {
+      return 'Selamat Pagi';
+    } else if (hour >= 12 && hour < 15) {
+      return 'Selamat Siang';
+    } else if (hour >= 15 && hour < 18) {
+      return 'Selamat Sore';
+    } else {
+      return 'Selamat Malam';
+    }
+  }
+
   Future<void> _loadData() async {
     try {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final yesterday = DateFormat('yyyy-MM-dd')
+          .format(DateTime.now().subtract(const Duration(days: 1)));
+
       setState(() {
         isLoading = true;
         stokHarianMessage = "Memuat data...";
         lowStockProducts = [];
+        productStatusMessage = "Memuat status produk...";
       });
 
       // 1. Ambil data products
       final productsSnap = await _database.child('products').get();
       if (productsSnap.exists && productsSnap.value != null) {
-        setState(() {
-          // Simpan ke variabel _productsData milik state
-          _productsData = Map<String, dynamic>.from(productsSnap.value as Map);
-        });
+        _productsData = Map<String, dynamic>.from(productsSnap.value as Map);
       }
 
-      // 2. Cek stok_harian
-      final stokRef = _database.child('stok_harian').child(today);
-      final stokSnap = await stokRef.get();
-      if (stokSnap.exists && stokSnap.value != null) {
-        final stokData = Map<String, dynamic>.from(stokSnap.value as Map);
+      // 2. Cek progress stok hari ini
+      final stockSnap = await _database.child('stok_harian/$today').get();
+      if (stockSnap.exists && stockSnap.value != null) {
+        final stockData = Map<String, dynamic>.from(stockSnap.value as Map);
 
-        // Proses stok untuk stok menipis
+        int totalProducts = _productsData.length;
+        int filledProducts = stockData.length;
+        double progress = totalProducts > 0 ? filledProducts / totalProducts : 0;
+
+        setState(() {
+          isStockInputCompleted = progress == 1.0;
+          stokHarianMessage = " ${(progress * 100).toStringAsFixed(1)}%";
+        });
+
+        // Produk stok menipis
         List<Map<String, dynamic>> tempLowStock = [];
-        stokData.forEach((productId, detail) {
-          if (detail != null) {
+        stockData.forEach((productId, detail) {
+          if (detail != null && _productsData.containsKey(productId)) {
             final detailMap = Map<String, dynamic>.from(detail as Map);
-            // Pastikan stok bertipe int
-            final int stok = (detailMap['stok'] as num?)?.toInt() ?? 0;
-            if (stok < 30) {
-              // Gunakan _productsData[productId]?['nama'] sebagai nama
-              String namaProduk = _productsData[productId]?['nama'] ?? productId;
+            final stok = (detailMap['stok'] as num?)?.toInt() ?? 0;
+
+            if (stok < 5) {
               tempLowStock.add({
-                'name': namaProduk,
-                'unit': stok,
+                'nama': _productsData[productId]['nama'] ?? 'Produk tidak dikenal',
+                'stok': stok,
               });
             }
           }
         });
-
-        setState(() {
-          isStockInputCompleted = true;
-          stokHarianMessage = "Anda sudah melakukan input stok hari ini";
-          lowStockProducts = tempLowStock;
-        });
+        setState(() => lowStockProducts = tempLowStock);
       } else {
         setState(() {
           isStockInputCompleted = false;
-          stokHarianMessage = "Anda belum melakukan input stok hari ini";
-          lowStockProducts = [];
+          stokHarianMessage = "Progress input stok: 0%";
         });
       }
 
-      // 3. Ambil data laporan penjualan
-      final reportRef = _database.child('laporan_harian').child(today);
-      final reportSnap = await reportRef.get();
+      // Update status produk secara otomatis
+      setState(() {
+        if (_productsData.isEmpty) {
+          productStatusMessage = "Belum ada produk terdaftar.";
+        } else {
+          productStatusMessage = "Terdapat ${_productsData.length} produk. ";
+          if (lowStockProducts.isNotEmpty) {
+            productStatusMessage += "Ada ${lowStockProducts.length} produk dengan stok menipis.";
+          } else {
+            productStatusMessage += "Semua produk dalam kondisi normal.";
+          }
+        }
+      });
 
+      // 3. Laporan kemarin
+      final reportSnap = await _database.child('laporan_harian/$yesterday').get();
       if (reportSnap.exists && reportSnap.value != null) {
         final reportData = Map<String, dynamic>.from(reportSnap.value as Map);
 
@@ -101,23 +165,20 @@ class _HomeScreenState extends State<HomeScreen> {
         int maxSold = 0;
 
         reportData.forEach((productId, data) {
-          if (data != null) {
+          if (data != null && _productsData.containsKey(productId)) {
             final detail = Map<String, dynamic>.from(data as Map);
+            final omset = (detail['omset'] as num?)?.toInt() ?? 0;
+            final laba = (detail['laba'] as num?)?.toInt() ?? 0;
+            final sold = (detail['laku'] as num?)?.toInt() ?? 0;
 
-            // Convert omset, laba, laku ke int
-            final int omsetVal = (detail['omset'] as num?)?.toInt() ?? 0;
-            final int labaVal  = (detail['laba']  as num?)?.toInt() ?? 0;
-            final int soldVal  = (detail['laku']  as num?)?.toInt() ?? 0;
+            totalOmset += omset;
+            totalLaba += laba;
+            totalItems += sold;
 
-            totalOmset += omsetVal;
-            totalLaba  += labaVal;
-            totalItems += soldVal;
-
-            // Cek produk terlaris
-            if (soldVal > maxSold) {
-              maxSold = soldVal;
-              // Gunakan _productsData[productId]?['nama'] untuk nama produk
-              bestProduct = _productsData[productId]?['nama'] ?? productId;
+            if (sold > maxSold) {
+              maxSold = sold;
+              bestProduct =
+                  _productsData[productId]['nama'] ?? 'Produk tidak dikenal';
             }
           }
         });
@@ -125,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           todayReport = {
             "totalOmset": "Rp ${NumberFormat('#,###').format(totalOmset)}",
-            "totalLaba":  "Rp ${NumberFormat('#,###').format(totalLaba)}",
+            "totalLaba": "Rp ${NumberFormat('#,###').format(totalLaba)}",
             "totalPenjualan": "$totalItems Items",
             "produkTerlaris": bestProduct
           };
@@ -142,21 +203,8 @@ class _HomeScreenState extends State<HomeScreen> {
       }
     } catch (e) {
       debugPrint("Error: $e");
-      setState(() {
-        isStockInputCompleted = false;
-        stokHarianMessage = "Gagal memuat data stok harian";
-        lowStockProducts = [];
-        todayReport = {
-          "totalOmset": "Rp 0",
-          "totalLaba": "Rp 0",
-          "totalPenjualan": "0 Items",
-          "produkTerlaris": "-"
-        };
-      });
     } finally {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
     }
   }
 
@@ -167,235 +215,610 @@ class _HomeScreenState extends State<HomeScreen> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
+
+    // Dapatkan tanggal hari ini dalam format yang lebih "user-friendly"
+    final todayDate = DateFormat('EEEE, d MMMM').format(DateTime.now());
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text("Dashboard"),
-      ),
       backgroundColor: Colors.grey[100],
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          children: [
-            // Bagian Atas: Stok Harian dan Stok Menipis
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Card Stok Harian
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    onTap: () {
-                      // Navigasi ke StockInputScreen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const StockInputScreen(),
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Baris pertama: ikon, judul, spacer, panah
-                          Row(
-                            children: [
-                              Icon(
-                                isStockInputCompleted
-                                    ? Icons.check_circle
-                                    : Icons.warning,
-                                color: isStockInputCompleted
-                                    ? Colors.green
-                                    : Colors.orange,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Stok Harian',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const Spacer(),
-                              const Icon(
-                                Icons.chevron_right,
-                                color: Colors.grey,
-                              ),
-                            ],
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // =================================================
+              // HEADER (Sapaan + Tanggal + Notifikasi)
+              // =================================================
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _getGreeting(),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey[800],
                           ),
-                          const SizedBox(height: 8),
-                          // Teks keterangan stok harian
-                          Text(
-                            stokHarianMessage,
-                            style: TextStyle(
-                              fontSize: 14,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_today_outlined,
+                              size: 14,
                               color: Colors.grey[600],
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Card Stok Menipis
-                Card(
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: InkWell(
-                    onTap: () {
-                      // Navigasi ke ReportScreen (contoh)
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>  ReportScreen(),
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: const [
-                              Icon(
-                                Icons.warning_amber,
-                                color: Colors.red,
-                                size: 24,
-                              ),
-                              SizedBox(width: 8),
-                              Text(
-                                'Stok Menipis',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              Spacer(),
-                              Icon(
-                                Icons.chevron_right,
-                                color: Colors.grey,
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          if (lowStockProducts.isEmpty)
+                            const SizedBox(width: 4),
                             Text(
-                              'Semua stok dalam kondisi aman',
+                              todayDate,
                               style: TextStyle(
+                                fontFamily: 'Poppins',
                                 fontSize: 14,
                                 color: Colors.grey[600],
                               ),
-                            )
-                          else
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: lowStockProducts.map((product) {
-                                return Text(
-                                  '${product["name"]}: ${product["unit"]} unit',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Ikon notifikasi (dummy)
+                  Stack(
+                    children: [
+                      IconButton(
+                        onPressed: () {},
+                        icon: const Icon(Icons.notifications_none),
+                      ),
+                      // Contoh badge notifikasi
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      )
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // =================================================
+              // BAGIAN: Kartu "Stock Harian" besar & horizontal
+              // =================================================
+              SizedBox(
+                height: 180, // Tinggi area scroll horizontal
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  controller: _pageController,
+                  children: [
+                    _buildStockHarianCard(context, stokHarianMessage),
+                    _buildProductStatusCard(context, productStatusMessage),
+                    _buildReportCard(context, "Laba: ${todayReport["totalLaba"] ?? "Rp 0"}")
+                    // Tambahkan lebih banyak kartu sesuai kebutuhan
+                  ],
+                ),
+              ),
+              // Indikator
+              Center(
+                child: SmoothPageIndicator(
+                  controller: _pageController,
+                  count: 3, // Jumlah halaman
+                  effect: ExpandingDotsEffect(
+                    activeDotColor: Colors.red,
+                    dotColor: Colors.grey,
+                    dotHeight: 8,
+                    dotWidth: 8,
+                    spacing: 4,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // =================================================
+              // "View Details" atau Bagian Stok Menipis
+              // =================================================
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                // Ganti warna latar kartu dengan merah (atau sesuai desain Anda)
+                color: Colors.red[300],
+                child: InkWell(
+                  onTap: () {
+                    // Navigasi ke LowStockScreen
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LowStockScreen(),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ikon peringatan di sisi kiri
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.red[100],
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.red[900],
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+
+                        // Bagian teks di tengah (Expanded)
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Stok Menipis",
+                                style: TextStyle(
+                                  fontFamily:'Poppins' ,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white, // Ubah jadi putih
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+
+                              // Konten stok menipis
+                              if (lowStockProducts.isEmpty)
+                                Text(
+                                  'Semua stok dalam kondisi aman',
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Colors.grey[600],
+                                    color: Colors.white70, // Teks abu-abu terang
                                   ),
-                                );
-                              }).toList(),
-                            ),
-                        ],
-                      ),
+                                )
+                              else
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    ...lowStockProducts.take(2).map((product) {
+                                      return Text(
+                                        '${product["nama"]}: ${product["stok"]} unit',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.white70,
+                                        ),
+                                      );
+                                    }).toList(),
+                                    if (lowStockProducts.length > 2)
+                                      Text(
+                                        '... dan lainnya',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+
+                        // Panah "chevron" di sisi kanan
+                        Icon(
+                          Icons.chevron_right,
+                          color: Colors.white70,
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 24),
+
+
+              Text(
+                "Laporan Penjualan Kemarin",
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoCard(
+                      icon: Icons.attach_money,
+                      iconColor: Colors.blue,
+                      title: 'Total Omset',
+                      value: todayReport["totalOmset"] ?? 'Rp 0',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildInfoCard(
+                      icon: Icons.trending_up,
+                      iconColor: Colors.green,
+                      title: 'Total Laba',
+                      value: todayReport["totalLaba"] ?? 'Rp 0',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildInfoCard(
+                      icon: Icons.shopping_cart,
+                      iconColor: Colors.orange,
+                      title: 'Total Penjualan',
+                      value: todayReport["totalPenjualan"] ?? '0 Items',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildInfoCard(
+                      icon: Icons.star,
+                      iconColor: Colors.purple,
+                      title: 'Produk Terlaris',
+                      value: todayReport["produkTerlaris"] ?? '-',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReportCard(BuildContext context, String reportSummary) {
+    return Container(
+      // Lebar ~80% dari lebar layar, agar tampak besar
+      width: MediaQuery.of(context).size.width * 0.8,
+      margin: const EdgeInsets.only(right: 16),
+      child: Card(
+        color: Colors.deepPurple[400], // Warna dasar kartu, sesuaikan sesuai desain
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: InkWell(
+          onTap: () {
+            // Navigasi ke ReportScreen saat kartu ditekan
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ReportScreen()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Bagian teks di sisi kiri
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Laporan Penjualan",
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        reportSummary,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple[600],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 16,
+                        ),
+                        child: const Text(
+                          "Lihat Detail",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Ikon di sisi kanan, misalnya ikon pie chart
+                const Icon(
+                  Icons.pie_chart,
+                  color: Colors.white,
+                  size: 32,
+                ),
               ],
             ),
-            const SizedBox(height: 16),
-            // Bagian Laporan Penjualan
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          ),
+        ),
+      ),
+    );
+  }
+
+
+  Widget _buildStockHarianCard(BuildContext context, String stokHarianMessage) {
+    // Ekstrak nilai persentase dari stokHarianMessage
+    double progressValue = 0.0;
+    try {
+      String numericPart = stokHarianMessage.trim().replaceAll("%", "");
+      progressValue = double.parse(numericPart) / 100.0;
+    } catch (e) {
+      progressValue = 0.0;
+    }
+
+    // Tentukan pesan status berdasarkan progressValue
+    String statusMessage = progressValue >= 1.0
+        ? "LOG HARIAN SUDAH TERISI"
+        : "LOG BELUM TERISI PENUH";
+
+    // Tentukan warna berdasarkan status
+    Color statusColor = progressValue >= 1.0 ? Colors.green : Colors.orange;
+
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.8,
+      margin: const EdgeInsets.only(right: 16),
+      child: Card(
+        elevation: 2,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const StockInputScreen()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Judul Card
+                Text(
+                  "Pantau Stok Harian",
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Informasi stok dengan circular progress
+                Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Header "Laporan Penjualan"
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    // Circular progress indicator
+                    SizedBox(
+                      width: 45,
+                      height: 45,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 45,
+                            height: 45,
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: CircularProgressIndicator(
+                              value: progressValue,
+                              strokeWidth: 3,
+                              backgroundColor: Colors.grey[300],
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  progressValue >= 1.0 ? Colors.green : Colors.blue
+                              ),
+                            ),
+                          ),
+                          Icon(
+                            Icons.inventory_2_outlined,
+                            color: progressValue >= 1.0 ? Colors.green : Colors.blue,
+                            size: 16,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Laporan Penjualan',
-                          style: TextStyle(
-                            fontSize: 18,
+                        Text(
+                          "Progress Input Stok",
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          stokHarianMessage,
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.open_in_new),
-                          onPressed: () {},
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // 2 baris x 2 kolom
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildInfoCard(
-                            icon: Icons.attach_money,
-                            iconColor: Colors.blue,
-                            title: 'Total Omset',
-                            value: todayReport["totalOmset"] ?? 'Rp 0',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildInfoCard(
-                            icon: Icons.trending_up,
-                            iconColor: Colors.green,
-                            title: 'Total Laba',
-                            value: todayReport["totalLaba"] ?? 'Rp 0',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildInfoCard(
-                            icon: Icons.shopping_cart,
-                            iconColor: Colors.orange,
-                            title: 'Total Penjualan',
-                            value: todayReport["totalPenjualan"] ?? '0 Items',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildInfoCard(
-                            icon: Icons.star,
-                            iconColor: Colors.purple,
-                            title: 'Produk Terlaris',
-                            value: todayReport["produkTerlaris"] ?? '-',
                           ),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ),
+
+                const SizedBox(height: 10),
+
+                // Status message banner
+                Container(
+                  height: 16,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: statusColor,
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      statusMessage,
+                      style: GoogleFonts.poppins(
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 10),
+
+                // Progress bar
+                SizedBox(
+                  height: 6,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: progressValue,
+                      backgroundColor: Colors.grey[200],
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                          progressValue >= 1.0 ? Colors.green : Colors.blue
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductStatusCard(BuildContext context, String statusMessage) {
+    return Container(
+      width: MediaQuery.of(context).size.width * 0.8,
+      margin: const EdgeInsets.only(right: 16),
+      child: Card(
+        // Warna dasar untuk status produk
+        color: const Color(0xFF3B82F6), // Contoh: biru cerah
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: InkWell(
+          onTap: () {
+            // Navigasi ke ProductScreen saat kartu ditekan
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ProductScreen()),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Bagian teks di sisi kiri
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Judul
+                      Text(
+                        "Status Produk",
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Menampilkan status produk (misal info stok atau lainnya)
+                      Text(
+                        statusMessage,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Tombol "Lihat Detail"
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF2563EB), // Warna tombol yang lebih gelap
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 8,
+                          horizontal: 16,
+                        ),
+                        child: const Text(
+                          "Lihat Detail",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Ikon di sisi kanan (contoh: ikon produk)
+                const Icon(
+                  Icons.inventory, // Bisa diganti dengan ikon lain yang relevan
+                  color: Colors.white,
+                  size: 32,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
