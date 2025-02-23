@@ -13,6 +13,7 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
     }
 
     kotlinOptions {
@@ -22,7 +23,7 @@ android {
     defaultConfig {
         applicationId "com.burjonet.burjo_stock"
         minSdk 23
-        targetSdk 34// Diperbarui ke versi terbaru
+        targetSdk 34
         versionCode 1
         versionName "1.0"
     }
@@ -45,6 +46,10 @@ android {
     }
 }
 
+dependencies {
+    // Dependency lainnya (jika ada)
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}
 flutter {
     source "../.."
 }

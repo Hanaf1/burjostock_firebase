@@ -3,7 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:burjo_stock/screens/main_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final bool showLogoutMessage;
+
+  const LoginScreen({
+    super.key,
+    this.showLogoutMessage = false
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -16,6 +21,34 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _isLoading = false;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    // Tampilkan pesan logout jika parameter showLogoutMessage true
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.showLogoutMessage) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Anda berhasil logout',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                color: Colors.white,
+              ),
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        );
+      }
+    });
+  }
 
   Future<void> _login() async {
     setState(() => _isLoading = true);
@@ -45,14 +78,12 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Tidak menggunakan AppBar, jadi kita pakai SafeArea agar tidak tertutup status bar
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Logo dari assets
               Center(
                 child: Image.asset(
                   'assets/sidebar.png',
@@ -60,12 +91,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
               const SizedBox(height: 24),
-              // Judul Aplikasi
               Text(
                 'BurjoStock',
                 style: TextStyle(
-                  fontFamily: 'Poppins',      // Pastikan sama dengan 'family' di pubspec
-                  fontWeight: FontWeight.w600, // SemiBold = w600
+                  fontFamily: 'Poppins',
+                  fontWeight: FontWeight.w600,
                   fontSize: 28,
                   color: Colors.black,
                 ),
@@ -73,7 +103,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 60),
 
-              // TextField Email
               TextField(
                 controller: _emailController,
                 decoration: InputDecoration(
@@ -87,7 +116,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 16),
 
-              // TextField Password
               TextField(
                 controller: _passwordController,
                 decoration: InputDecoration(
@@ -100,7 +128,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 obscureText: true,
               ),
 
-              // Pesan Error
               if (_errorMessage != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -112,7 +139,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
               const SizedBox(height: 24),
 
-              // Tombol Login
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(

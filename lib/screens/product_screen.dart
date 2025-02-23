@@ -3,6 +3,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'Analisis/analysis_screen.dart';
+
 class ProductScreen extends StatefulWidget {
   const ProductScreen({Key? key}) : super(key: key);
 
@@ -26,10 +28,7 @@ class _ProductScreenState extends State<ProductScreen> {
     _loadData();
   }
 
-  // Fungsi _loadData dimodifikasi agar:
-  // Untuk setiap produk di node "products", jika data stok hari ini tersedia untuk produk tersebut, gunakan;
-  // Jika tidak, cek dan gunakan data stok dari hari sebelumnya.
-  // Juga mengambil data penjualan untuk menentukan produk terlaris.
+
   Future<void> _loadData() async {
     // Ambil data produk dari node "products"
     final productsSnapshot = await _db.child("products").get();
@@ -64,7 +63,6 @@ class _ProductScreenState extends State<ProductScreen> {
     }
 
     productStocks.clear();
-    // Untuk setiap produk, gunakan stok hari ini jika ada; jika tidak, gunakan stok kemarin (jika tersedia)
     for (var key in productsData.keys) {
       if (todayData.containsKey(key)) {
         productStocks[key] = todayData[key]['stok'] ?? 0;
@@ -211,6 +209,7 @@ class _ProductScreenState extends State<ProductScreen> {
       child: Text(
         label,
         style: TextStyle(
+          fontFamily: 'Poppins',
           color: color,
           fontSize: 12,
           fontWeight: FontWeight.bold,
@@ -301,65 +300,111 @@ class _ProductScreenState extends State<ProductScreen> {
               ),
             ),
             SizedBox(height: 10,),
+
             Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Produk Terlaris
-                    Row(
-                      children: [
-                        const Icon(Icons.star, color: Colors.amber),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Produk Terlaris: $bestProduct',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
+              child: InkWell(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) =>  AnalyticScreen(), // Buat screen baru untuk analytics
                     ),
-                    if (displayedLowStock.isNotEmpty) ...[
-                      const SizedBox(height: 16),
-                      // Section Low Stock
-                      Row(
-                        children: const [
-                          Icon(Icons.warning, color: Colors.red),
-                          SizedBox(width: 8),
-                          Text(
-                            'Low Stock:',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      // Bagian kiri - Informasi
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Analisis Produk",
+                              style: GoogleFonts.poppins(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      ...displayedLowStock.map((product) => Padding(
-                        padding: const EdgeInsets.only(left: 32, bottom: 4),
-                        child: Text(
-                          '${product['nama']} (${product['stok']} items)',
-                          style: const TextStyle(color: Colors.red),
+                            const SizedBox(height: 4),
+                            Text(
+                              "Pantau performa & pendapatan produk",
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Row(
+                              children: [
+                                // Total Produk
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue[50],
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.inventory_2_outlined,
+                                        size: 16,
+                                        color: Colors.blue[700],
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "${productsData.length} Produk",
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12,
+                                          color: Colors.blue[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // Total Low Stock
+
+                              ],
+                            ),
+                          ],
                         ),
-                      )),
-                      if (extraCount > 0)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 32, bottom: 4),
-                          child: Text(
-                            'dan $extraCount lainnya',
-                            style: const TextStyle(
-                                color: Colors.red,
-                                fontStyle: FontStyle.italic),
-                          ),
-                        )
+                      ),
+                      // Bagian kanan - Icon dan arrow
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[500],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.analytics_outlined,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.arrow_forward,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -368,9 +413,12 @@ class _ProductScreenState extends State<ProductScreen> {
             Column(
               children: [
                 TextField(
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                  ),
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: 'Cari produk...',
+                    hintText: 'Cari produk...' ,
                     filled: true,
                     fillColor: Colors.white,
                     suffixIcon: IconButton(
@@ -394,7 +442,10 @@ class _ProductScreenState extends State<ProductScreen> {
                   child: Row(
                     children: [
                       FilterChip(
-                        label: const Text('Semua'),
+                        label: const Text('Semua',
+                        style: TextStyle(
+                          fontFamily: 'Poppins'
+                        ),),
                         selected: statusFilter == null,
                         onSelected: (selected) {
                           setState(() {
@@ -406,7 +457,11 @@ class _ProductScreenState extends State<ProductScreen> {
                       ),
                       const SizedBox(width: 8),
                       FilterChip(
-                        label: const Text('Aman'),
+                        label: const Text('Aman',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                          ),
+                        ),
                         selected: statusFilter == 'Aman',
                         onSelected: (selected) {
                           setState(() {
@@ -418,7 +473,10 @@ class _ProductScreenState extends State<ProductScreen> {
                       ),
                       const SizedBox(width: 8),
                       FilterChip(
-                        label: const Text('Menipis'),
+                        label: const Text('Menipis', style:
+                          TextStyle(
+                            fontFamily: 'Poppins',
+                          ),),
                         selected: statusFilter == 'Menipis',
                         onSelected: (selected) {
                           setState(() {
@@ -430,7 +488,10 @@ class _ProductScreenState extends State<ProductScreen> {
                       ),
                       const SizedBox(width: 8),
                       FilterChip(
-                        label: const Text('Habis'),
+                        label: const Text('Habis',
+                        style: TextStyle(
+                          fontFamily: 'Poppins'
+                        ),),
                         selected: statusFilter == 'Habis',
                         onSelected: (selected) {
                           setState(() {
@@ -468,6 +529,7 @@ class _ProductScreenState extends State<ProductScreen> {
                             child: Text(
                               product['nama'],
                               style: const TextStyle(
+                                fontFamily: 'Poppins',
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
                               ),

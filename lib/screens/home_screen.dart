@@ -1,4 +1,6 @@
+import 'package:burjo_stock/screens/day_detail_screen.dart';
 import 'package:burjo_stock/screens/lowstock_screen.dart';
+import 'package:burjo_stock/screens/notification_screen.dart';
 import 'package:burjo_stock/screens/product_screen.dart';
 import 'package:burjo_stock/screens/report_screen.dart';
 import 'package:burjo_stock/screens/stock_input_screen.dart';
@@ -62,13 +64,42 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Loading indicator
   bool isLoading = true;
+  int _lowStockCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _listenToStockChanges();
   }
 
+  void _listenToStockChanges() {
+    _database.child('stok_harian').onValue.listen((event) {
+      if (event.snapshot.value != null) {
+        int count = 0;
+        final data = event.snapshot.value as Map<dynamic, dynamic>;
+
+        data.forEach((date, products) {
+          if (products is Map) {
+            products.forEach((productId, productData) {
+              if (productData is Map && productData['stok'] is num) {
+                int stock = (productData['stok'] as num).toInt();
+                if (stock <= 4) {
+                  count++;
+                }
+              }
+            });
+          }
+        });
+
+        if (mounted) {
+          setState(() {
+            _lowStockCount = count;
+          });
+        }
+      }
+    });
+  }
   /// Menghasilkan sapaan berdasarkan waktu saat ini
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -272,22 +303,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   Stack(
                     children: [
                       IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.notifications_none),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const NotificationScreen(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(
+                          Icons.notifications_none,
+                          size: 28,
+                        ),
                       ),
-                      // Contoh badge notifikasi
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
+                      if (_lowStockCount > 0)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.5,
+                              ),
+                            ),
                           ),
                         ),
-                      )
                     ],
                   ),
                 ],
@@ -433,60 +478,136 @@ class _HomeScreenState extends State<HomeScreen> {
 
               const SizedBox(height: 24),
 
+              InkWell(
+                onTap: () {
+                  final yesterday = DateTime.now().subtract(const Duration(days: 1));
+                  final yesterdayStr = DateFormat('yyyy-MM-dd').format(yesterday);
 
-              Text(
-                "Laporan Penjualan Kemarin",
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
+                  _database.child('laporan_harian/$yesterdayStr').get().then((snapshot) {
+                    if (snapshot.exists && snapshot.value != null) {
+                      final data = snapshot.value as Map<Object?, Object?>;
+                      final dayData = Map<String, dynamic>.from(
+                        data.map((key, value) {
+                          if (value is Map) {
+                            return MapEntry(
+                              key.toString(),
+                              Map<String, dynamic>.from(
+                                (value as Map<Object?, Object?>).map(
+                                      (k, v) => MapEntry(k.toString(), v),
+                                ),
+                              ),
+                            );
+                          }
+                          return MapEntry(key.toString(), value);
+                        }),
+                      );
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => DayDetailScreen(
+                            dateStr: yesterdayStr,
+                            dayData: dayData,
+                          ),
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tidak ada data penjualan untuk kemarin'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }).catchError((error) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Error: ${error.toString()}'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  });
+                },
+                child: Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              "Laporan Penjualan Kemarin",
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.grey[800],
+                              ),
+                            ),
+                            Icon(
+                              Icons.chevron_right,
+                              color: Colors.grey[600],
+                              size: 24,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildInfoCard(
+                                icon: Icons.attach_money,
+                                iconColor: Colors.blue,
+                                title: 'Total Omset',
+                                value: todayReport["totalOmset"] ?? 'Rp 0',
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildInfoCard(
+                                icon: Icons.trending_up,
+                                iconColor: Colors.green,
+                                title: 'Total Laba',
+                                value: todayReport["totalLaba"] ?? 'Rp 0',
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildInfoCard(
+                                icon: Icons.shopping_cart,
+                                iconColor: Colors.orange,
+                                title: 'Total Penjualan',
+                                value: todayReport["totalPenjualan"] ?? '0 Items',
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildInfoCard(
+                                icon: Icons.star,
+                                iconColor: Colors.purple,
+                                title: 'Produk Terlaris',
+                                value: todayReport["produkTerlaris"] ?? '-',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoCard(
-                      icon: Icons.attach_money,
-                      iconColor: Colors.blue,
-                      title: 'Total Omset',
-                      value: todayReport["totalOmset"] ?? 'Rp 0',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildInfoCard(
-                      icon: Icons.trending_up,
-                      iconColor: Colors.green,
-                      title: 'Total Laba',
-                      value: todayReport["totalLaba"] ?? 'Rp 0',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildInfoCard(
-                      icon: Icons.shopping_cart,
-                      iconColor: Colors.orange,
-                      title: 'Total Penjualan',
-                      value: todayReport["totalPenjualan"] ?? '0 Items',
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _buildInfoCard(
-                      icon: Icons.star,
-                      iconColor: Colors.purple,
-                      title: 'Produk Terlaris',
-                      value: todayReport["produkTerlaris"] ?? '-',
-                    ),
-                  ),
-                ],
-              ),
+              )
+
+
             ],
           ),
         ),

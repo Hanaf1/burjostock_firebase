@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'stock_input_screen.dart';
+
 
 class LowStockScreen extends StatefulWidget {
   const LowStockScreen({Key? key}) : super(key: key);

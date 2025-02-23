@@ -1,4 +1,4 @@
-import 'dart:math' show pi;
+
 import 'package:burjo_stock/screens/report_detail_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -14,13 +14,13 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  // Referensi ke Firebase Realtime Database (node: laporan_harian)
   final DatabaseReference _database =
   FirebaseDatabase.instance.ref("laporan_harian");
+  bool isLoading = true;
 
   // Menyimpan data penjualan dari Firebase
   Map<String, dynamic> salesData = {};
-
+  Map<String, String> productNames = {};
   // Filter yang dipilih untuk chart: "laba", "laku", atau "omset"
   String selectedFilter = "omset";
 
@@ -34,9 +34,35 @@ class _ReportScreenState extends State<ReportScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchSalesData();
+    _loadInitialData();
   }
 
+  Future<void> _loadInitialData() async {
+    setState(() => isLoading = true);
+    try {
+      await _fetchProductNames();
+      _fetchSalesData();
+    } finally {
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _fetchProductNames() async {
+    try {
+      final ref = FirebaseDatabase.instance.ref();
+      final snapshot = await ref.child('products').get();
+
+      if (snapshot.exists) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        productNames = {};
+        data.forEach((key, value) {
+          productNames[key] = (value as Map)['nama'] ?? 'Produk tidak dikenal';
+        });
+      }
+    } catch (e) {
+      print('Error loading product names: $e');
+    }
+  }
   /// Mendengarkan perubahan data di node "laporan_harian" dan menyimpannya ke salesData
   void _fetchSalesData() {
     _database.onValue.listen((event) {
@@ -56,7 +82,9 @@ class _ReportScreenState extends State<ReportScreen> {
     double totalModal = 0;
     int totalLaku = 0;
 
+
     String topProductId = '';
+    String topProductName = '-';
     int topProductLaku = 0;
 
     // Loop setiap tanggal
@@ -79,6 +107,7 @@ class _ReportScreenState extends State<ReportScreen> {
             if (laku > topProductLaku) {
               topProductLaku = laku;
               topProductId = key;
+              topProductName = productNames[key] ?? 'Produk tidak dikenal';
             }
           }
         });
@@ -91,6 +120,7 @@ class _ReportScreenState extends State<ReportScreen> {
       'modal': totalModal,
       'laku': totalLaku,
       'topProductId': topProductId,
+      'topProductName' : topProductName,
     };
   }
 
@@ -296,12 +326,17 @@ class _ReportScreenState extends State<ReportScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     final allSummary = _getAllSummary();
 
     final String omsetStr = _currencyFormat.format(allSummary['omset'] ?? 0);
     final String labaStr = _currencyFormat.format(allSummary['laba'] ?? 0);
     final int lakuInt = (allSummary['laku'] ?? 0) as int;
-    final String topProduct = allSummary['topProductId'] ?? '-';
+    final String topProduct = allSummary['topProductName'] ?? '-';
 
     return Scaffold(
       body: SingleChildScrollView(
@@ -558,7 +593,7 @@ class _ReportScreenState extends State<ReportScreen> {
   Widget _buildPercentageStat({
     required String title,
     required String value,
-    required Color color,
+    required Color color
   }) {
     return Container(
       padding: const EdgeInsets.all(12),
