@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +15,7 @@ class ProductScreen extends StatefulWidget {
 
 class _ProductScreenState extends State<ProductScreen> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
+
   Map<String, dynamic> productsData = {};
   Map<String, int> productStocks = {};
   String bestProduct = '-';
@@ -26,8 +28,12 @@ class _ProductScreenState extends State<ProductScreen> {
   void initState() {
     super.initState();
     _loadData();
+    _loadUserRole();
   }
 
+  String userRole = ""; // misalnya kosong di awal
+
+  final user = FirebaseAuth.instance.currentUser;
 
   Future<void> _loadData() async {
     // Ambil data produk dari node "products"
@@ -109,6 +115,45 @@ class _ProductScreenState extends State<ProductScreen> {
     setState(() {
       isLoading = false;
     });
+  }
+
+  Future<void> _loadUserRole() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        // Belum login atau user null, atur userRole ke "NONE" atau semacamnya
+        setState(() {
+          userRole = "NONE";
+        });
+        return;
+      }
+
+      // Ambil role dari path "users/[uid]/role"
+      final roleSnap = await _db.child('users/${user.uid}/role').get();
+
+      if (roleSnap.exists && roleSnap.value != null) {
+        setState(() {
+          userRole = roleSnap.value.toString();
+          // misal "KARYAWAN" atau "PEMILIK"
+        });
+      } else {
+        // Jika data tidak ada
+        setState(() {
+          userRole = "NONE";
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loadUserRole: $e");
+    }
+  }
+
+  bool _isPemilik() {
+    // Normalize and compare role to avoid issues with whitespace or case
+    String normalizedRole = userRole.trim().toUpperCase();
+    // Remove any quotes that might be in the string
+    normalizedRole = normalizedRole.replaceAll('"', '');
+
+    return normalizedRole == "PEMILIK";
   }
 
   // Fungsi CRUD: Dialog untuk menambah/mengedit produk
@@ -237,6 +282,8 @@ class _ProductScreenState extends State<ProductScreen> {
       );
     }
 
+    bool isPemilik = _isPemilik();
+
     // Ambil produk low stock (stok < 30)
     final allLowStockProducts = productsData.entries
         .where((entry) =>
@@ -277,10 +324,10 @@ class _ProductScreenState extends State<ProductScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
 
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: isPemilik ? FloatingActionButton(
         onPressed: () => _showProductDialog(),
         child: const Icon(Icons.add),
-      ),
+      ) : null,
       body: RefreshIndicator(
         onRefresh: _loadData,
         child: ListView(
@@ -301,119 +348,149 @@ class _ProductScreenState extends State<ProductScreen> {
             ),
             SizedBox(height: 10,),
 
-            Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: InkWell(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>  AnalyticScreen(), // Buat screen baru untuk analytics
-                    ),
-                  );
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      // Bagian kiri - Informasi
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              "Analisis Produk",
-                              style: GoogleFonts.poppins(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              "Pantau performa & pendapatan produk",
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                // Total Produk
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.blue[50],
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                        Icons.inventory_2_outlined,
-                                        size: 16,
-                                        color: Colors.blue[700],
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "${productsData.length} Produk",
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
-                                          color: Colors.blue[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+            // Kondisional card analisis produk - hanya tampil jika PEMILIK
+            if (isPemilik)
+              Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AnalyticScreen(), // Buat screen baru untuk analytics
+                      ),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        // Bagian kiri - Informasi
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                "Analisis Produk",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.black87,
                                 ),
-                                const SizedBox(width: 8),
-                                // Total Low Stock
-
-                              ],
-                            ),
-                          ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Pantau performa & pendapatan produk",
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  // Total Produk
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue[50],
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.inventory_2_outlined,
+                                          size: 16,
+                                          color: Colors.blue[700],
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "${productsData.length} Produk",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: Colors.blue[700],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Total Low Stock
+                                  if (allLowStockProducts.isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red[50],
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.warning_outlined,
+                                            size: 16,
+                                            color: Colors.red[700],
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            "${allLowStockProducts.length} Menipis",
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              color: Colors.red[700],
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      // Bagian kanan - Icon dan arrow
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[500],
-                          borderRadius: BorderRadius.circular(12),
+                        // Bagian kanan - Icon dan arrow
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF63B4FF),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(
+                                Icons.analytics_outlined,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              SizedBox(width: 4),
+                              Icon(
+                                Icons.arrow_forward,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ],
+                          ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.analytics_outlined,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.arrow_forward,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
             const SizedBox(height: 16),
             // Search Bar dengan filter status stok
             Column(
               children: [
                 TextField(
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontFamily: 'Poppins',
                   ),
                   controller: _searchController,
@@ -434,6 +511,11 @@ class _ProductScreenState extends State<ProductScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
+                  onChanged: (value) {
+                    setState(() {
+                      searchQuery = value.trim().toLowerCase();
+                    });
+                  },
                 ),
                 const SizedBox(height: 8),
                 // Filter chip untuk status stok
@@ -443,9 +525,9 @@ class _ProductScreenState extends State<ProductScreen> {
                     children: [
                       FilterChip(
                         label: const Text('Semua',
-                        style: TextStyle(
-                          fontFamily: 'Poppins'
-                        ),),
+                          style: TextStyle(
+                              fontFamily: 'Poppins'
+                          ),),
                         selected: statusFilter == null,
                         onSelected: (selected) {
                           setState(() {
@@ -474,9 +556,9 @@ class _ProductScreenState extends State<ProductScreen> {
                       const SizedBox(width: 8),
                       FilterChip(
                         label: const Text('Menipis', style:
-                          TextStyle(
-                            fontFamily: 'Poppins',
-                          ),),
+                        TextStyle(
+                          fontFamily: 'Poppins',
+                        ),),
                         selected: statusFilter == 'Menipis',
                         onSelected: (selected) {
                           setState(() {
@@ -489,9 +571,9 @@ class _ProductScreenState extends State<ProductScreen> {
                       const SizedBox(width: 8),
                       FilterChip(
                         label: const Text('Habis',
-                        style: TextStyle(
-                          fontFamily: 'Poppins'
-                        ),),
+                          style: TextStyle(
+                              fontFamily: 'Poppins'
+                          ),),
                         selected: statusFilter == 'Habis',
                         onSelected: (selected) {
                           setState(() {
@@ -536,15 +618,18 @@ class _ProductScreenState extends State<ProductScreen> {
                             ),
                           ),
                           _buildStatusBadge(stock),
-                          IconButton(
-                            icon: const Icon(Icons.edit, color: Colors.blue),
-                            onPressed: () => _showProductDialog(
-                                productId: productId, productData: product),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => _deleteProduct(productId),
-                          ),
+                          // Tampilkan tombol edit dan delete hanya untuk PEMILIK
+                          if (isPemilik) ...[
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => _showProductDialog(
+                                  productId: productId, productData: product),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _deleteProduct(productId),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -555,10 +640,12 @@ class _ProductScreenState extends State<ProductScreen> {
                             "Stok: $stock items",
                             style: const TextStyle(color: Colors.grey),
                           ),
-                          Text(
-                            "Harga Beli: Rp${NumberFormat('#,###').format(product['hargaBeli'])}",
-                            style: const TextStyle(color: Colors.grey),
-                          ),
+                          // Harga beli hanya tampil untuk PEMILIK
+                          if (isPemilik)
+                            Text(
+                              "Harga Beli: Rp${NumberFormat('#,###').format(product['hargaBeli'])}",
+                              style: const TextStyle(color: Colors.grey),
+                            ),
                           Text(
                             "Harga Jual: Rp${NumberFormat('#,###').format(product['hargaJual'])}",
                             style: const TextStyle(color: Colors.grey),

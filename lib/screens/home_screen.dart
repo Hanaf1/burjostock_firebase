@@ -4,6 +4,7 @@ import 'package:burjo_stock/screens/notification_screen.dart';
 import 'package:burjo_stock/screens/product_screen.dart';
 import 'package:burjo_stock/screens/report_screen.dart';
 import 'package:burjo_stock/screens/stock_input_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -38,6 +39,7 @@ class HomeScreen extends StatefulWidget {
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
+
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -53,6 +55,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
   // Data produk
   Map<String, dynamic> _productsData = {};
+
+  String userRole = ""; // misalnya kosong di awal
+
+  final user = FirebaseAuth.instance.currentUser;
+
 
   // Status stok harian
   bool isStockInputCompleted = false;
@@ -71,6 +78,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadData();
     _listenToStockChanges();
+    _loadUserRole();
   }
 
   void _listenToStockChanges() {
@@ -113,6 +121,38 @@ class _HomeScreenState extends State<HomeScreen> {
       return 'Selamat Malam';
     }
   }
+
+
+  Future<void> _loadUserRole() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        // Belum login atau user null, atur userRole ke "NONE" atau semacamnya
+        setState(() {
+          userRole = "NONE";
+        });
+        return;
+      }
+
+      // Ambil role dari path "users/[uid]/role"
+      final roleSnap = await _database.child('users/${user.uid}/role').get();
+
+      if (roleSnap.exists && roleSnap.value != null) {
+        setState(() {
+          userRole = roleSnap.value.toString();
+          // misal "KARYAWAN" atau "PEMILIK"
+        });
+      } else {
+        // Jika data tidak ada
+        setState(() {
+          userRole = "NONE";
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loadUserRole: $e");
+    }
+  }
+
 
   Future<void> _loadData() async {
     try {
@@ -350,16 +390,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     _buildStockHarianCard(context, stokHarianMessage),
                     _buildProductStatusCard(context, productStatusMessage),
-                    _buildReportCard(context, "Laba: ${todayReport["totalLaba"] ?? "Rp 0"}")
-                    // Tambahkan lebih banyak kartu sesuai kebutuhan
+                    if (userRole == "PEMILIK")
+                      _buildReportCard(context, "Laba: ${todayReport["totalLaba"] ?? "Rp 0"}"),
+
                   ],
                 ),
               ),
               // Indikator
-              Center(
-                child: SmoothPageIndicator(
+            Center(
+              child: SmoothPageIndicator(
                   controller: _pageController,
-                  count: 3, // Jumlah halaman
+                  // Jika role = "KARYAWAN" maka 3 dot, jika "PEMILIK" maka 2 dot
+                  count: userRole == "PEMILIK" ? 3 : 2,
                   effect: ExpandingDotsEffect(
                     activeDotColor: Colors.red,
                     dotColor: Colors.grey,
@@ -370,7 +412,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+        const SizedBox(height: 16),
 
               // =================================================
               // "View Details" atau Bagian Stok Menipis
@@ -617,17 +659,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildReportCard(BuildContext context, String reportSummary) {
     return Container(
-      // Lebar ~80% dari lebar layar, agar tampak besar
       width: MediaQuery.of(context).size.width * 0.8,
       margin: const EdgeInsets.only(right: 16),
       child: Card(
-        color: Colors.deepPurple[400], // Warna dasar kartu, sesuaikan sesuai desain
+        color: Colors.deepPurple[400],
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
         child: InkWell(
           onTap: () {
-            // Navigasi ke ReportScreen saat kartu ditekan
             Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => const ReportScreen()),
@@ -682,7 +722,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                // Ikon di sisi kanan, misalnya ikon pie chart
                 const Icon(
                   Icons.pie_chart,
                   color: Colors.white,
