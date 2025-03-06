@@ -2,12 +2,14 @@
 class Product {
   final int? id;
   final String nama;
+  final String kategori;
   final double hargaBeli;
   final double hargaJual;
 
   Product({
     this.id,
     required this.nama,
+    required this.kategori,
     required this.hargaBeli,
     required this.hargaJual,
   });
@@ -16,6 +18,7 @@ class Product {
     return Product(
       id: map['id'],
       nama: map['nama'],
+      kategori: map['kategori'],
       hargaBeli: map['harga_beli'],
       hargaJual: map['harga_jual'],
     );
@@ -25,6 +28,7 @@ class Product {
     return {
       'id': id,
       'nama': nama,
+      'kategori' : kategori,
       'harga_beli': hargaBeli,
       'harga_jual': hargaJual,
     };

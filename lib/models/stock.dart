@@ -32,6 +32,7 @@ class Stock {
       product: map.containsKey('nama_product')
           ? Product(
         id: map['product_id'],
+        kategori: map['kategori'],
         nama: map['nama_product'],
         hargaBeli: map['harga_beli'],
         hargaJual: map['harga_jual'],

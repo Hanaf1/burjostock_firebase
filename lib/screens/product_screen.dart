@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'Analisis/analysis_screen.dart';
+import 'categoryManagementScreen.dart';
 
 class ProductScreen extends StatefulWidget {
   const ProductScreen({Key? key}) : super(key: key);
@@ -157,70 +158,167 @@ class _ProductScreenState extends State<ProductScreen> {
   }
 
   // Fungsi CRUD: Dialog untuk menambah/mengedit produk
+  // Pada _showProductDialog, tambahkan dropdown kategori
+
   void _showProductDialog({String? productId, Map? productData}) {
-    final _namaController =
-    TextEditingController(text: productData?['nama'] ?? '');
+    final _namaController = TextEditingController(text: productData?['nama'] ?? '');
     final _hargaBeliController = TextEditingController(
         text: productData?['hargaBeli']?.toString() ?? '');
     final _hargaJualController = TextEditingController(
         text: productData?['hargaJual']?.toString() ?? '');
 
+    // Nilai awal kategori yang dipilih
+    String? selectedCategoryId = productData?['categoryId'];
+    Map<String, dynamic> categories = {};
+
+    // Fungsi untuk memuat daftar kategori
+    Future<void> loadCategories() async {
+      final snapshot = await _db.child("categories").get();
+      if (snapshot.value != null && snapshot.value is Map) {
+        categories = Map<String, dynamic>.from(snapshot.value as Map);
+      }
+    }
+
     showDialog(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text(productId == null ? 'Tambah Produk' : 'Edit Produk'),
-          content: SingleChildScrollView(
-            child: Column(
-              children: [
-                TextField(
-                  controller: _namaController,
-                  decoration: const InputDecoration(labelText: 'Nama'),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            // StatefulBuilder untuk memperbarui state dialog
+
+            // Muat kategori saat dialog dibuka
+            if (categories.isEmpty) {
+              loadCategories().then((_) {
+                setState(() {}); // Refresh dialog saat kategori sudah dimuat
+              });
+            }
+
+            return AlertDialog(
+              title: Text(productId == null ? 'Tambah Produk' : 'Edit Produk'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _namaController,
+                      decoration: const InputDecoration(labelText: 'Nama'),
+                    ),
+                    TextField(
+                      controller: _hargaBeliController,
+                      decoration: const InputDecoration(labelText: 'Harga Beli'),
+                      keyboardType: TextInputType.number,
+                    ),
+                    TextField(
+                      controller: _hargaJualController,
+                      decoration: const InputDecoration(labelText: 'Harga Jual'),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Dropdown untuk kategori
+                    DropdownButtonFormField<String>(
+                      decoration: const InputDecoration(
+                        labelText: 'Kategori',
+                        border: OutlineInputBorder(),
+                      ),
+                      value: selectedCategoryId,
+                      hint: const Text('Pilih Kategori'),
+                      isExpanded: true,
+                      items: [
+                        // Tambahkan opsi untuk semua kategori
+                        ...categories.entries.map((entry) {
+                          return DropdownMenuItem<String>(
+                            value: entry.key,
+                            child: Text(entry.value['nama']),
+                          );
+                        }).toList(),
+                      ],
+                      onChanged: (value) {
+                        setState(() {
+                          selectedCategoryId = value;
+                        });
+                      },
+                    ),
+
+                    // Tombol untuk mengelola kategori
+                    if (categories.isEmpty)
+                      const Center(child: CircularProgressIndicator())
+                    else
+                      TextButton.icon(
+                        onPressed: () {
+                          // Tutup dialog saat ini
+                          Navigator.of(context).pop();
+
+                          // Buka halaman manajemen kategori
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const CategoryManagementScreen(),
+                            ),
+                          ).then((_) {
+                            // Buka kembali dialog produk setelah kembali dari manajemen kategori
+                            _showProductDialog(
+                              productId: productId,
+                              productData: productData,
+                            );
+                          });
+                        },
+                        icon: const Icon(Icons.add_circle_outline),
+                        label: const Text('Kelola Kategori'),
+                      ),
+                  ],
                 ),
-                TextField(
-                  controller: _hargaBeliController,
-                  decoration: const InputDecoration(labelText: 'Harga Beli'),
-                  keyboardType: TextInputType.number,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
                 ),
-                TextField(
-                  controller: _hargaJualController,
-                  decoration: const InputDecoration(labelText: 'Harga Jual'),
-                  keyboardType: TextInputType.number,
+                ElevatedButton(
+                  onPressed: () async {
+                    String nama = _namaController.text;
+                    int hargaBeli = int.tryParse(_hargaBeliController.text) ?? 0;
+                    int hargaJual = int.tryParse(_hargaJualController.text) ?? 0;
+
+                    // Validasi
+                    if (nama.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Nama produk tidak boleh kosong')),
+                      );
+                      return;
+                    }
+
+                    if (selectedCategoryId == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Pilih kategori terlebih dahulu')),
+                      );
+                      return;
+                    }
+
+                    Map<String, dynamic> newProduct = {
+                      'nama': nama,
+                      'hargaBeli': hargaBeli,
+                      'hargaJual': hargaJual,
+                      'categoryId': selectedCategoryId,
+                    };
+
+                    if (productId == null) {
+                      // Tambah produk baru
+                      DatabaseReference newRef = _db.child("products").push();
+                      await newRef.set(newProduct);
+                    } else {
+                      // Update produk yang sudah ada
+                      await _db.child("products").child(productId).update(newProduct);
+                    }
+
+                    Navigator.of(context).pop();
+                    _loadData();
+                  },
+                  child: Text(productId == null ? 'Tambah' : 'Update'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                String nama = _namaController.text;
-                int hargaBeli =
-                    int.tryParse(_hargaBeliController.text) ?? 0;
-                int hargaJual =
-                    int.tryParse(_hargaJualController.text) ?? 0;
-                Map<String, dynamic> newProduct = {
-                  'nama': nama,
-                  'hargaBeli': hargaBeli,
-                  'hargaJual': hargaJual,
-                };
-                if (productId == null) {
-                  // Tambah produk baru
-                  DatabaseReference newRef = _db.child("products").push();
-                  await newRef.set(newProduct);
-                } else {
-                  // Update produk yang sudah ada
-                  await _db.child("products").child(productId).update(newProduct);
-                }
-                Navigator.of(context).pop();
-                _loadData();
-              },
-              child: Text(productId == null ? 'Tambah' : 'Update'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
