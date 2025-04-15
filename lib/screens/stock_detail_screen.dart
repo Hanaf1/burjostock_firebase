@@ -28,6 +28,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   int _totalStockCount = 0;
   int _totalPurchaseCount = 0;
   int _lowStockCount = 0;  // Produk dengan stok < 10
+  int _totalSoldCount = 0;  // Tambahkan total laku
 
   @override
   void initState() {
@@ -47,55 +48,121 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     });
 
     try {
-      final dataSnapshot = await _databaseRef.child('stok_harian/${widget.date}').get();
+      // Ambil data stok dari stok_harian
+      final stockSnapshot = await _databaseRef.child('stok_harian/${widget.date}').get();
 
-      if (dataSnapshot.exists) {
-        final stockData = Map<String, dynamic>.from(dataSnapshot.value as Map);
-        List<Map<String, dynamic>> products = [];
-        int totalStock = 0;
-        int totalPurchases = 0;
-        int lowStockItems = 0;
+      // Ambil data laporan harian (laku) dari laporan_harian
+      final reportSnapshot = await _databaseRef.child('laporan_harian/${widget.date}').get();
 
-        stockData.forEach((productId, data) {
-          final productData = Map<String, dynamic>.from(data as Map);
+      // Inisialisasi data laporan
+      Map<String, dynamic> reportData = {};
+      if (reportSnapshot.exists && reportSnapshot.value != null) {
+        reportData = Map<String, dynamic>.from(reportSnapshot.value as Map);
+      }
 
-          // Get stock and purchases
-          int stockCount = productData['stok'] ?? 0;
-          int purchaseCount = productData['beli'] ?? 0;
+      // Inisialisasi data stok
+      Map<String, dynamic> stockData = {};
+      if (stockSnapshot.exists && stockSnapshot.value != null) {
+        stockData = Map<String, dynamic>.from(stockSnapshot.value as Map);
+      }
+
+      List<Map<String, dynamic>> products = [];
+      int totalStock = 0;
+      int totalPurchases = 0;
+      int lowStockItems = 0;
+      int totalSold = 0;
+
+      // Gabungkan semua ID produk dari stok dan laporan
+      Set<String> allProductIds = {...stockData.keys};
+      reportData.keys.forEach((id) => allProductIds.add(id));
+
+      // Proses setiap produk
+      for (String productId in allProductIds) {
+        try {
+          // Default values
+          int stockCount = 0;
+          int purchaseCount = 0;
+          int soldCount = 0;
+
+          // Ambil data stok jika ada
+          if (stockData.containsKey(productId)) {
+            var prodStockData = stockData[productId];
+            if (prodStockData is Map) {
+              // Stok
+              if (prodStockData.containsKey('stok')) {
+                var stokVal = prodStockData['stok'];
+                if (stokVal is int) {
+                  stockCount = stokVal;
+                } else if (stokVal is String) {
+                  stockCount = int.tryParse(stokVal.toString()) ?? 0;
+                }
+              }
+
+              // Beli
+              if (prodStockData.containsKey('beli')) {
+                var beliVal = prodStockData['beli'];
+                if (beliVal is int) {
+                  purchaseCount = beliVal;
+                } else if (beliVal is String) {
+                  purchaseCount = int.tryParse(beliVal.toString()) ?? 0;
+                }
+              }
+            }
+          }
+
+          // Ambil data laku jika ada
+          if (reportData.containsKey(productId)) {
+            var prodReportData = reportData[productId];
+            if (prodReportData is Map) {
+              if (prodReportData.containsKey('laku')) {
+                var lakuVal = prodReportData['laku'];
+                if (lakuVal is int) {
+                  soldCount = lakuVal;
+                } else if (lakuVal is String) {
+                  soldCount = int.tryParse(lakuVal.toString()) ?? 0;
+                }
+              }
+            }
+          }
 
           // Track low stock
           if (stockCount < 10) {
             lowStockItems++;
           }
 
+          // Tambahkan ke total
           totalStock += stockCount;
           totalPurchases += purchaseCount;
+          totalSold += soldCount;
 
+          // Tambahkan ke list produk
           products.add({
             'id': productId,
             'name': widget.productNames[productId] ?? 'Produk $productId',
             'stock': stockCount,
             'purchase': purchaseCount,
-            'timestamp': productData['timestamp'] ?? 0,
+            'sold': soldCount,
           });
-        });
-
-        // Sort products by stock (lowest first)
-        products.sort((a, b) => a['stock'].compareTo(b['stock']));
-
-        setState(() {
-          _stockDetails = products;
-          _totalStockCount = totalStock;
-          _totalPurchaseCount = totalPurchases;
-          _lowStockCount = lowStockItems;
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _stockDetails = [];
-          _isLoading = false;
-        });
+        } catch (e) {
+          debugPrint('Error processing product $productId: $e');
+        }
       }
+
+      // Sort products by stock (lowest first)
+      products.sort((a, b) {
+        int stockA = a['stock'] as int;
+        int stockB = b['stock'] as int;
+        return stockA.compareTo(stockB);
+      });
+
+      setState(() {
+        _stockDetails = products;
+        _totalStockCount = totalStock;
+        _totalPurchaseCount = totalPurchases;
+        _totalSoldCount = totalSold;
+        _lowStockCount = lowStockItems;
+        _isLoading = false;
+      });
     } catch (e) {
       debugPrint('Error fetching stock details: $e');
       setState(() {
@@ -177,10 +244,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       color: Colors.green,
                     ),
                     _buildStatCard(
-                      title: 'Stok Rendah',
-                      value: _lowStockCount,
-                      icon: Icons.warning,
-                      color: Colors.orange,
+                      title: 'Total Laku',  // Ganti dari Stok Rendah ke Total Laku
+                      value: _totalSoldCount,
+                      icon: Icons.shopping_bag,  // Ganti icon
+                      color: Colors.purple,  // Ganti warna
                     ),
                   ],
                 ),
@@ -266,6 +333,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 final product = filteredProducts[index];
                 final stockLevel = product['stock'];
                 final purchaseCount = product['purchase'];
+                final soldCount = product['sold'];
 
                 // Define color based on stock level
                 Color stockColor = Colors.green;
@@ -290,19 +358,24 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        // Nama produk
+                        Text(
+                          product['name'],
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+
+                        const SizedBox(height: 12),
+
+                        // Badge row untuk stok, beli, dan laku
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            Expanded(
-                              child: Text(
-                                product['name'],
-                                style: GoogleFonts.poppins(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                            // Badge Stok
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
@@ -319,39 +392,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.inventory_2_outlined,
-                                  size: 16,
-                                  color: Colors.grey[600],
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'ID: ${product['id']}',
-                                  style: GoogleFonts.poppins(
-                                    color: Colors.grey[600],
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
+
+                            // Badge Beli
                             if (purchaseCount > 0)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.green),
                                 ),
                                 child: Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
+                                    const Icon(
                                       Icons.add_shopping_cart,
                                       size: 14,
                                       color: Colors.green,
@@ -368,30 +422,36 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                                   ],
                                 ),
                               ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        // Stock indicator bar
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Level Stok:',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: Colors.grey[600],
+
+                            // Badge Laku (baru)
+                            if (soldCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.purple.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.purple),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.shopping_bag,
+                                      size: 14,
+                                      color: Colors.purple,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Laku: $soldCount',
+                                      style: GoogleFonts.poppins(
+                                        color: Colors.purple,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: LinearProgressIndicator(
-                                value: stockLevel / 100,
-                                minHeight: 10,
-                                backgroundColor: Colors.grey[200],
-                                valueColor: AlwaysStoppedAnimation<Color>(stockColor),
-                              ),
-                            ),
                           ],
                         ),
                       ],

@@ -1,170 +1,211 @@
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
-class CategoryManagementScreen extends StatefulWidget {
-  const CategoryManagementScreen({Key? key}) : super(key: key);
+class CategoryManager extends StatefulWidget {
+  final Function onCategoriesUpdated;
+  final Map<String, dynamic> initialCategories;
+  final Map<String, dynamic> productsData;
+
+  const CategoryManager({
+    Key? key,
+    required this.onCategoriesUpdated,
+    required this.initialCategories,
+    required this.productsData,
+  }) : super(key: key);
 
   @override
-  State<CategoryManagementScreen> createState() => _CategoryManagementScreenState();
+  State<CategoryManager> createState() => _CategoryManagerState();
 }
 
-class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
+class _CategoryManagerState extends State<CategoryManager> {
   final DatabaseReference _db = FirebaseDatabase.instance.ref();
-  Map<String, dynamic> categoriesData = {};
-  bool isLoading = true;
-  String userRole = "";
+  final _categoryController = TextEditingController();
+  late Map<String, dynamic> categoriesData;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
-    _loadUserRole();
+    categoriesData = Map<String, dynamic>.from(widget.initialCategories);
   }
 
-  Future<void> _loadData() async {
-    // Ambil data kategori dari node "categories"
-    final categoriesSnapshot = await _db.child("categories").get();
-    if (categoriesSnapshot.value != null && categoriesSnapshot.value is Map) {
+  Future<void> _loadCategories() async {
+    final snapshot = await _db.child("categories").get();
+    if (snapshot.value != null && snapshot.value is Map) {
       setState(() {
-        categoriesData = Map<String, dynamic>.from(categoriesSnapshot.value as Map);
-        isLoading = false;
+        categoriesData = Map<String, dynamic>.from(snapshot.value as Map);
       });
-    } else {
-      setState(() {
-        categoriesData = {};
-        isLoading = false;
-      });
+      widget.onCategoriesUpdated(categoriesData);
     }
   }
 
-  Future<void> _loadUserRole() async {
-    try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) {
-        setState(() {
-          userRole = "NONE";
-        });
-        return;
-      }
-
-      final roleSnap = await _db.child('users/${user.uid}/role').get();
-
-      if (roleSnap.exists && roleSnap.value != null) {
-        setState(() {
-          userRole = roleSnap.value.toString();
-        });
-      } else {
-        setState(() {
-          userRole = "NONE";
-        });
-      }
-    } catch (e) {
-      debugPrint("Error loadUserRole: $e");
-    }
-  }
-
-  bool _isPemilik() {
-    String normalizedRole = userRole.trim().toUpperCase();
-    normalizedRole = normalizedRole.replaceAll('"', '');
-    return normalizedRole == "PEMILIK";
-  }
-
-  // Dialog untuk menambah atau mengedit kategori
-  void _showCategoryDialog({String? categoryId, Map? categoryData}) {
-    final _namaController = TextEditingController(text: categoryData?['nama'] ?? '');
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(categoryId == null ? 'Tambah Kategori' : 'Edit Kategori'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _namaController,
-                  decoration: const InputDecoration(labelText: 'Nama Kategori'),
-                ),
-              ],
-            ),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Kelola Kategori',
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.w600,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Batal'),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // Form tambah kategori baru
+            Card(
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Tambah Kategori Baru",
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _categoryController,
+                            decoration: InputDecoration(
+                              labelText: 'Nama Kategori',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            String nama = _categoryController.text.trim();
+                            if (nama.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Nama kategori tidak boleh kosong')),
+                              );
+                              return;
+                            }
+
+                            Map<String, dynamic> newCategory = {
+                              'nama': nama,
+                            };
+
+                            // Tambah kategori baru
+                            DatabaseReference newRef = _db.child("categories").push();
+                            await newRef.set(newCategory);
+
+                            // Clear text field
+                            _categoryController.clear();
+
+                            // Reload kategori
+                            await _loadCategories();
+
+                            // Tampilkan notifikasi sukses
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Kategori berhasil ditambahkan'),
+                                backgroundColor: Colors.green,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.add_circle),
+                          label: const Text('Tambah'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
-            ElevatedButton(
-              onPressed: () async {
-                String nama = _namaController.text.trim();
-                if (nama.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Nama kategori tidak boleh kosong')),
+            const SizedBox(height: 16),
+
+            // Daftar kategori
+            Expanded(
+              child: categoriesData.isEmpty
+                  ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.category_outlined, size: 48, color: Colors.grey),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Belum ada kategori',
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+                  : ListView.builder(
+                itemCount: categoriesData.length,
+                itemBuilder: (context, index) {
+                  final entry = categoriesData.entries.elementAt(index);
+                  final categoryId = entry.key;
+                  final category = entry.value;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: ListTile(
+                      title: Text(
+                        category['nama'],
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Edit kategori
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () {
+                              _showEditCategoryDialog(
+                                categoryId: categoryId,
+                                categoryData: category,
+                              );
+                            },
+                          ),
+                          // Hapus kategori
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              _showDeleteCategoryConfirmation(
+                                categoryId: categoryId,
+                                categoryName: category['nama'],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                   );
-                  return;
-                }
-
-                Map<String, dynamic> newCategory = {
-                  'nama': nama,
-                };
-
-                if (categoryId == null) {
-                  // Tambah kategori baru
-                  DatabaseReference newRef = _db.child("categories").push();
-                  await newRef.set(newCategory);
-                } else {
-                  // Update kategori yang sudah ada
-                  await _db.child("categories").child(categoryId).update(newCategory);
-                }
-
-                Navigator.of(context).pop();
-                _loadData(); // Reload data setelah perubahan
-              },
-              child: Text(categoryId == null ? 'Tambah' : 'Update'),
+                },
+              ),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 
-  // Fungsi untuk menghapus kategori
-  Future<void> _deleteCategory(String categoryId) async {
-    // Cek apakah kategori sedang digunakan oleh produk
-    final productsSnapshot = await _db.child("products").get();
-    if (productsSnapshot.value != null && productsSnapshot.value is Map) {
-      Map<String, dynamic> productsData = Map<String, dynamic>.from(productsSnapshot.value as Map);
-
-      // Cek jika ada produk yang menggunakan kategori ini
-      bool isUsed = productsData.values.any((product) {
-        if (product is Map && product.containsKey('categoryId')) {
-          return product['categoryId'] == categoryId;
-        }
-        return false;
-      });
-
-      if (isUsed) {
-        // Tampilkan peringatan bahwa kategori sedang digunakan
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Kategori ini sedang digunakan oleh beberapa produk. Ubah kategori produk terlebih dahulu.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Jika tidak digunakan, hapus kategori
-    await _db.child("categories").child(categoryId).remove();
-    _loadData(); // Reload data setelah perubahan
-  }
-
-  // Dialog konfirmasi hapus kategori
-  void _showDeleteConfirmation(String categoryId, String categoryName) {
+  // Dialog konfirmasi hapus kategori - Versi yang diperbarui
+  void _showDeleteCategoryConfirmation({required String categoryId, required String categoryName}) {
     showDialog(
       context: context,
       builder: (context) {
@@ -177,11 +218,51 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
               child: const Text('Batal'),
             ),
             ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _deleteCategory(categoryId);
-              },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () async {
+                // Cek apakah kategori sedang digunakan oleh produk
+                bool isUsed = false;
+                List<String> affectedProducts = [];
+
+                widget.productsData.forEach((key, value) {
+                  if (value is Map && value.containsKey('categoryId') && value['categoryId'] == categoryId) {
+                    isUsed = true;
+                    // Tambahkan nama produk ke daftar produk yang terpengaruh
+                    if (value.containsKey('nama')) {
+                      affectedProducts.add(value['nama']);
+                    }
+                  }
+                });
+
+                if (isUsed) {
+                  // Tutup dialog konfirmasi pertama
+                  Navigator.of(context).pop();
+
+                  // Tampilkan dialog konfirmasi lanjutan
+                  _showForceDeleteConfirmation(
+                    categoryId: categoryId,
+                    categoryName: categoryName,
+                    affectedProducts: affectedProducts,
+                  );
+                  return;
+                }
+
+                // Jika tidak digunakan, langsung hapus kategori
+                await _db.child("categories").child(categoryId).remove();
+
+                // Refresh data
+                await _loadCategories();
+
+                // Tampilkan notifikasi sukses
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Kategori berhasil dihapus'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+
+                Navigator.of(context).pop();
+              },
               child: const Text('Hapus'),
             ),
           ],
@@ -190,122 +271,154 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    bool isPemilik = _isPemilik();
-
-    // Jika bukan pemilik, redirect ke halaman lain atau tampilkan pesan
-    if (!isPemilik) {
-      return Scaffold(
-        appBar: AppBar(title: const Text('Kategori')),
-        body: const Center(
-          child: Text('Anda tidak memiliki akses ke halaman ini.'),
-        ),
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          'Manajemen Kategori',
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showCategoryDialog(),
-        child: const Icon(Icons.add),
-      ),
-      body: RefreshIndicator(
-        onRefresh: _loadData,
-        child: categoriesData.isEmpty
-            ? Center(
-          child: Column(
+  // Dialog konfirmasi paksa hapus kategori yang sedang digunakan
+  void _showForceDeleteConfirmation({
+    required String categoryId,
+    required String categoryName,
+    required List<String> affectedProducts,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Perhatian!'),
+          content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.category_outlined, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text(
-                'Belum ada kategori',
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  color: Colors.grey[600],
+              Text('Kategori "$categoryName" sedang digunakan oleh ${affectedProducts.length} produk:'),
+              const SizedBox(height: 8),
+              // Menampilkan daftar produk yang menggunakan kategori ini
+              Container(
+                constraints: BoxConstraints(
+                  maxHeight: 120, // Batasi tinggi daftar
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: affectedProducts.length > 5
+                      ? 5 // Tampilkan maks 5 produk
+                      : affectedProducts.length,
+                  itemBuilder: (context, index) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text('• ${affectedProducts[index]}'),
+                    );
+                  },
                 ),
               ),
+              // Tampilkan "dan X lainnya" jika produk lebih dari 5
+              if (affectedProducts.length > 5)
+                Text('• ... dan ${affectedProducts.length - 5} produk lainnya'),
+              const SizedBox(height: 16),
+              const Text(
+                'Jika Anda menghapus kategori ini, semua produk tersebut akan kehilangan referensi kategori.',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
-              ElevatedButton.icon(
-                onPressed: () => _showCategoryDialog(),
-                icon: const Icon(Icons.add),
-                label: const Text('Tambah Kategori'),
+              const Text(
+                'Apakah Anda yakin ingin melanjutkan?',
+                style: TextStyle(color: Colors.red),
               ),
             ],
           ),
-        )
-            : ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              'Total Kategori: ${categoriesData.length}',
-              style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
             ),
-            const SizedBox(height: 16),
-            ...categoriesData.entries.map((entry) {
-              final category = entry.value;
-              final categoryId = entry.key;
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListTile(
-                  title: Text(
-                    category['nama'],
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.w500,
-                    ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () async {
+                // Hapus kategori meskipun sedang digunakan
+                await _db.child("categories").child(categoryId).remove();
+
+                // Update produk yang menggunakan kategori ini
+                // Hapus referensi categoryId dari produk
+                for (var entry in widget.productsData.entries) {
+                  String productId = entry.key;
+                  var product = entry.value;
+                  if (product is Map &&
+                      product.containsKey('categoryId') &&
+                      product['categoryId'] == categoryId) {
+                    await _db.child("products").child(productId).update({
+                      'categoryId': null, // Atau bisa dihapus sepenuhnya jika diinginkan
+                    });
+                  }
+                }
+
+                // Refresh data
+                await _loadCategories();
+
+                // Tampilkan notifikasi sukses
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Kategori berhasil dihapus'),
+                    backgroundColor: Colors.green,
                   ),
-                  subtitle: Text(
-                    'ID: $categoryId',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _showCategoryDialog(
-                          categoryId: categoryId,
-                          categoryData: category,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () => _showDeleteConfirmation(
-                          categoryId,
-                          category['nama'],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
+                );
+
+                Navigator.of(context).pop();
+              },
+              child: const Text('Hapus Paksa'),
+            ),
           ],
-        ),
-      ),
+        );
+      },
+    );
+  }
+
+  // Dialog untuk mengedit kategori
+  void _showEditCategoryDialog({required String categoryId, required Map categoryData}) {
+    final _categoryNameController = TextEditingController(text: categoryData['nama']);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit Kategori'),
+          content: TextField(
+            controller: _categoryNameController,
+            decoration: const InputDecoration(
+              labelText: 'Nama Kategori',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                String nama = _categoryNameController.text.trim();
+                if (nama.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Nama kategori tidak boleh kosong')),
+                  );
+                  return;
+                }
+
+                // Update kategori
+                await _db.child("categories").child(categoryId).update({'nama': nama});
+
+                // Refresh data
+                await _loadCategories();
+
+                // Tampilkan notifikasi sukses
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Kategori berhasil diperbarui'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+
+                Navigator.of(context).pop();
+              },
+              child: const Text('Simpan'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

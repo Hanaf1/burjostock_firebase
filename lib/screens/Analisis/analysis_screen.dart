@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:fl_chart/fl_chart.dart';
+
+import '../report_screen.dart';
+import '../stock_daily_screen.dart';
 
 class AnalyticScreen extends StatefulWidget {
   const AnalyticScreen({Key? key}) : super(key: key);
@@ -171,6 +173,110 @@ class _AnalyticScreenState extends State<AnalyticScreen> {
       );
     }
   }
+  Widget _buildStockReportCard() {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => StockDailyScreen()),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Laporan Stok Harian',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(Icons.description, color: Colors.blue, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Lihat detail pergerakan stok',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  Widget _buildRevenueReportCard() {
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => ReportScreen()),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Laporan Pendapatan',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.grey, size: 20),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Icon(Icons.attach_money, color: Colors.green, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Lihat rincian pendapatan',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Membangun tampilan kartu metrik (Modal, Omzet, Profit, dsb.)
   Widget _buildMetricCard(
@@ -326,7 +432,18 @@ class _AnalyticScreenState extends State<AnalyticScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Overview Cards: Modal, Omzet, Profit
+            Row(
+              children: [
+                Expanded(child: _buildStockReportCard()),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Baris kedua
+            Row(
+              children: [
+                Expanded(child: _buildRevenueReportCard()),
+              ],
+            ),
             Row(
               children: [
                 Expanded(
@@ -499,6 +616,7 @@ class _AnalyticScreenState extends State<AnalyticScreen> {
 
             // Daftar top 5 produk paling laku
             _buildPerformanceList(),
+
           ],
         ),
       ),
